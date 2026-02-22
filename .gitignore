@@ -1,0 +1,55 @@
+# Haskell / Cabal
+dist-newstyle/
+*.hi
+*.o
+*.dyn_hi
+*.dyn_o
+.cabal-sandbox/
+cabal.sandbox.config
+cabal.project.local
+cabal.project.local~
+.hpc/
+*.hp
+*.prof
+*.aux
+*.eventlog
+
+# GHC
+.ghc.environment.*
+
+# Nix
+result
+result-*
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+
+# TypeScript
+dist/
+*.js.map
+*.d.ts
+
+# Build outputs
+build/
+out/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Test coverage
+coverage/
+.nyc_output/

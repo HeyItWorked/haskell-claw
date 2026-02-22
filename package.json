@@ -1,0 +1,15 @@
+{
+  "name": "hasklaw",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc"
+  },
+  "description": "OpenClaw Core Development Environment",
+  "devDependencies": {
+    "@types/node": "^22.19.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
