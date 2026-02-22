@@ -15,10 +15,15 @@ export class CoreSupervisor {
   private connected = false;
 
   async start(): Promise<void> {
-    // Start Haskell binary
-    this.coreProcess = spawn('cabal', ['run'], {
-      cwd: path.join(process.cwd(), 'core')
-    });
+    // Use pre-built binary if available (CI), otherwise fall back to cabal run (local dev)
+    const coreBinary = process.env.CORE_BINARY;
+    if (coreBinary) {
+      this.coreProcess = spawn(coreBinary, []);
+    } else {
+      this.coreProcess = spawn('cabal', ['run'], {
+        cwd: path.join(process.cwd(), 'core')
+      });
+    }
 
     // Store a reference to avoid null checks
     const proc = this.coreProcess;
