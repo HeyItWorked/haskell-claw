@@ -29,11 +29,16 @@ jobs:
       - name: Build Haskell core
         run: nix develop --command bash -c "cd core && cabal update && cabal build"
 
+      - name: Stage binary for upload
+        run: |
+          mkdir -p /tmp/core-out
+          cp $(find core/dist-newstyle -type f -name "core" -executable | head -1) /tmp/core-out/core
+
       - name: Upload core binary
         uses: actions/upload-artifact@v4
         with:
           name: core-binary
-          path: core/dist-newstyle/build/*/ghc-*/core-*/x/core/build/core/core
+          path: /tmp/core-out/core
           if-no-files-found: error
 
   build-ts:
