@@ -53,3 +53,4 @@ out/
 # Test coverage
 coverage/
 .nyc_output/
+phase0-learning-guide.md
