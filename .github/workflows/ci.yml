@@ -21,11 +21,14 @@ jobs:
 
       # Cachix provides a shared binary cache so GHC dependencies don't need
       # to be compiled from source on every CI run (saves ~10-20 min per run).
-      - name: Install Cachix
-        uses: cachix/cachix-action@v15
+      - name: Cache Cabal store
+        uses: actions/cache@v4
         with:
-          name: haskell-claw
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          path: |
+            ~/.cabal/store
+            core/dist-newstyle
+          key: ${{ runner.os }}-ghc-9.8.2-${{ hashFiles('core/core.cabal') }}
+          restore-keys: ${{ runner.os }}-ghc-9.8.2-
 
       - name: Build
         run: |
@@ -74,12 +77,6 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-
-      - name: Install Cachix
-        uses: cachix/cachix-action@v15
-        with:
-          name: haskell-claw
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       # Download the pre-built binary from build-haskell instead of recompiling.
       - name: Download core binary
