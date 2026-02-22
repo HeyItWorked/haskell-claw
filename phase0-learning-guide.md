@@ -760,6 +760,8 @@ GitHub Actions is a CI/CD platform integrated with GitHub. It automates building
 
 ### Creating the Workflow File
 
+> **Implementation note:** The CI was initially written using `haskell-actions/setup` to install GHC directly, bypassing Nix entirely. This contradicted the plan — Step 3 establishes Nix as the environment source of truth, so CI must use it too. The corrected approach uses `install-nix-action` + `nix develop --command` for all jobs, which also unblocks Cachix in Step 8 (Cachix requires Nix to be present).
+
 Create a file at `.github/workflows/ci.yml`:
 
 ```yaml
@@ -777,81 +779,91 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up GHC 9.8.2
-        uses: haskell-actions/setup@v2
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
         with:
-          ghc-version: '9.8.2'
-          cabal-version: 'latest'
-      
-      - name: Cache dependencies
-        uses: actions/cache@v3
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Set up Cachix
+        uses: cachix/cachix-action@v15
         with:
-          path: |
-            ~/.cabal/store
-            dist-newstyle
-          key: ${{ runner.os }}-ghc-${{ hashFiles('**/core.cabal') }}
-          restore-keys: ${{ runner.os }}-ghc-
-      
-      - name: Build
-        run: |
-          cd core
-          cabal update
-          cabal build
-      
+          name: haskell-claw
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - name: Build Haskell core
+        run: nix develop --command bash -c "cd core && cabal update && cabal build"
+
       - name: Upload core binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: core-binary
           path: core/dist-newstyle/build/*/ghc-*/core-*/x/core/build/core/core
           if-no-files-found: error
-  
+
   build-ts:
     name: Build TypeScript
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
         with:
-          node-version: '22'
-      
-      - name: Install dependencies
-        run: npm ci
-      
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Set up Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          name: haskell-claw
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - name: Install Node dependencies
+        run: nix develop --command npm ci
+
       - name: Type check
-        run: npx tsc --noEmit
-  
+        run: nix develop --command npx tsc --noEmit
+
   test-ipc:
     name: Test IPC Performance
     runs-on: ubuntu-latest
     needs: [build-haskell, build-ts]
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
         with:
-          node-version: '22'
-      
-      - name: Set up GHC 9.8.2
-        uses: haskell-actions/setup@v2
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Set up Cachix
+        uses: cachix/cachix-action@v15
         with:
-          ghc-version: '9.8.2'
-          cabal-version: 'latest'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Build Haskell core
-        run: |
-          cd core
-          cabal update
-          cabal build
-      
+          name: haskell-claw
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - name: Download core binary
+        uses: actions/download-artifact@v4
+        with:
+          name: core-binary
+          path: core-bin
+
+      - name: Make binary executable
+        run: chmod +x core-bin/core
+
+      - name: Install Node dependencies
+        run: nix develop --command npm ci
+
       - name: Run IPC performance test
-        run: npm test
+        run: nix develop --command npm test
+        env:
+          CORE_BINARY: ${{ github.workspace }}/core-bin/core
 ```
 
 ### Understanding the Workflow
@@ -901,20 +913,11 @@ Cachix is a binary cache for Nix. It stores pre-built packages so they don't nee
 
 ### Update CI Workflow for Cachix
 
-Add Cachix to the `build-haskell` job:
+Cachix is already wired into the CI workflow from Step 7 — the `cachix/cachix-action` step handles both pushing and pulling automatically. When a job runs, Cachix:
+1. **Pulls** any paths already in the cache before the build
+2. **Pushes** any newly built Nix store paths after the build
 
-```yaml
-- name: Setup Cachix
-  uses: cachix/cachix-action@v13
-  with:
-    name: openclaw # replace with your cache name
-    authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-
-# Add this after the build step
-- name: Push to Cachix
-  run: |
-    find core/dist-newstyle -type f -name "*.a" -o -name "*.o" -o -name "*.so" -o -name "*.dylib" | cachix push openclaw
-```
+> **Why Cachix requires Nix:** An earlier attempt tried to use Cachix with `haskell-actions/setup` (which installs GHC directly, not via Nix). This failed with `nix-env: command not found`. Cachix is a Nix binary cache — it only works when builds go through the Nix store. The fix was to install Nix first (`install-nix-action`) and run all commands inside `nix develop`. There is no separate "add Cachix to CI" step; it's already part of the correct workflow above.
 
 ### Measuring Cachix Improvement
 
