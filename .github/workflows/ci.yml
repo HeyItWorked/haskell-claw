@@ -23,7 +23,7 @@ jobs:
       - name: Set up Cachix
         uses: cachix/cachix-action@v15
         with:
-          name: haskell-claw
+          name: hask-claw
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Build Haskell core
@@ -52,7 +52,7 @@ jobs:
       - name: Set up Cachix
         uses: cachix/cachix-action@v15
         with:
-          name: haskell-claw
+          name: hask-claw
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Install Node dependencies
@@ -78,7 +78,7 @@ jobs:
       - name: Set up Cachix
         uses: cachix/cachix-action@v15
         with:
-          name: haskell-claw
+          name: hask-claw
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Download core binary
