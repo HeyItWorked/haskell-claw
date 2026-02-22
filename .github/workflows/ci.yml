@@ -13,31 +13,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up GHC 9.8.2
-        uses: haskell-actions/setup@v2
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
         with:
-          ghc-version: '9.8.2'
-          cabal-version: 'latest'
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
 
-      # Cachix provides a shared binary cache so GHC dependencies don't need
-      # to be compiled from source on every CI run (saves ~10-20 min per run).
-      - name: Cache Cabal store
-        uses: actions/cache@v4
+      - name: Set up Cachix
+        uses: cachix/cachix-action@v15
         with:
-          path: |
-            ~/.cabal/store
-            core/dist-newstyle
-          key: ${{ runner.os }}-ghc-9.8.2-${{ hashFiles('core/core.cabal') }}
-          restore-keys: ${{ runner.os }}-ghc-9.8.2-
+          name: haskell-claw
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
-      - name: Build
-        run: |
-          cd core
-          cabal update
-          cabal build
+      - name: Build Haskell core
+        run: nix develop --command bash -c "cd core && cabal update && cabal build"
 
-      # Upload the compiled binary so test-ipc can download it
-      # instead of rebuilding from scratch.
       - name: Upload core binary
         uses: actions/upload-artifact@v4
         with:
@@ -51,19 +42,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
         with:
-          node-version: '22'
-          cache: 'npm'
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Set up Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          name: haskell-claw
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
-      # --noEmit means tsc only type-checks; it doesn't write output files.
-      # This is fast and catches type errors without needing a full build step.
+      - name: Install Node dependencies
+        run: nix develop --command npm ci
+
       - name: Type check
-        run: npx tsc --noEmit
+        run: nix develop --command npx tsc --noEmit
 
   test-ipc:
     name: Test IPC Performance
@@ -72,13 +68,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
         with:
-          node-version: '22'
-          cache: 'npm'
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
 
-      # Download the pre-built binary from build-haskell instead of recompiling.
+      - name: Set up Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          name: haskell-claw
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
       - name: Download core binary
         uses: actions/download-artifact@v4
         with:
@@ -89,11 +91,9 @@ jobs:
         run: chmod +x core-bin/core
 
       - name: Install Node dependencies
-        run: npm ci
+        run: nix develop --command npm ci
 
-      # The IPC test spawns the Haskell binary and measures round-trip latency.
-      # CORE_BINARY tells the test where to find the executable.
       - name: Run IPC performance test
-        run: npm test
+        run: nix develop --command npm test
         env:
           CORE_BINARY: ${{ github.workspace }}/core-bin/core

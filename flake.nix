@@ -10,9 +10,10 @@
             pkgs = import nixpkgs { inherit system; };
             ghcVersion = "9.8.2";
         in {
-            devShell = pkgs.mkShell {
+            devShells.default = pkgs.mkShell {
                 buildInputs = [
                     pkgs.haskell.packages.ghc98.ghc
+                    pkgs.haskell.packages.ghc98.cabal-install
                     pkgs.nodejs_22
                 ];
             };
