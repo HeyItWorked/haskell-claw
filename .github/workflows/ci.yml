@@ -42,7 +42,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: core-binary
-          path: core/dist-newstyle/build/*/ghc-*/Main-*/x/Main/build/Main/Main
+          path: core/dist-newstyle/build/*/ghc-*/core-*/x/core/build/core/core
           if-no-files-found: error
 
   build-ts:
@@ -86,7 +86,7 @@ jobs:
           path: core-bin
 
       - name: Make binary executable
-        run: chmod +x core-bin/Main
+        run: chmod +x core-bin/core
 
       - name: Install Node dependencies
         run: npm ci
@@ -96,4 +96,4 @@ jobs:
       - name: Run IPC performance test
         run: npm test
         env:
-          CORE_BINARY: ${{ github.workspace }}/core-bin/Main
+          CORE_BINARY: ${{ github.workspace }}/core-bin/core
