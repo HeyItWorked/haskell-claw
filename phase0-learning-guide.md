@@ -291,7 +291,7 @@ executable core
   build-depends:    base ^>=4.19.0.0,
                     network ^>=3.1.4.0,
                     aeson ^>=2.2.1.0,
-                    bytestring ^>=0.11.5.0,
+                    bytestring >=0.11.5.0 && <0.13,
                     text ^>=2.1,
                     scientific ^>=0.3.7.0,
                     directory ^>=1.3.7.0
@@ -304,6 +304,12 @@ Key additions:
 - **network**: For socket programming
 - **directory**: For file operations (to clean up socket files)
 - **-threaded**: Enables GHC's threaded runtime for concurrency
+
+> **Lesson — Cabal version bounds and GHC boot libraries:** The `^>=` operator in Cabal means "compatible release" — `^>=0.11.5.0` only allows `0.11.x`. This caused a CI failure: GHC 9.8.2 ships with `bytestring 0.12` as a boot library (bundled with the compiler), and `unix` depends on it. Cabal couldn't satisfy both constraints simultaneously.
+>
+> The fix is to use an explicit range: `>=0.11.5.0 && <0.13`. This accepts both `0.11` and `0.12`, unblocking the solver.
+>
+> **Rule of thumb:** Use `^>=` for most dependencies. For packages that GHC ships as boot libraries (`bytestring`, `text`, `base`, `containers`, `unix`), prefer an explicit range so you don't get locked out of newer compiler versions.
 
 ### Implementing the UDS Server
 
@@ -469,10 +475,15 @@ export class CoreSupervisor {
   private connected = false;
 
   async start(): Promise<void> {
-    // Start Haskell binary
-    this.coreProcess = spawn('cabal', ['run'], {
-      cwd: path.join(process.cwd(), 'core')
-    });
+    // Use pre-built binary if available (CI), otherwise fall back to cabal run (local dev)
+    const coreBinary = process.env.CORE_BINARY;
+    if (coreBinary) {
+      this.coreProcess = spawn(coreBinary, []);
+    } else {
+      this.coreProcess = spawn('cabal', ['run'], {
+        cwd: path.join(process.cwd(), 'core')
+      });
+    }
 
     this.coreProcess.stdout.on('data', (data) => {
       console.log(`Core stdout: ${data}`);
@@ -612,6 +623,14 @@ This class:
 3. **Connects to the socket** and establishes communication
 4. **Sends ping messages** and measures the response time
 5. **Cleans up resources** when done
+
+> **Lesson — CI vs local dev binary strategy:** The original supervisor always called `cabal run`, which compiles and then runs the binary. In CI this caused two problems: the `test-ipc` job had no Cabal package list (`cabal update` hadn't been run), and there was a dependency conflict.
+>
+> The fix is the `CORE_BINARY` environment variable pattern:
+> - In CI, `build-haskell` compiles the binary once and uploads it as an artifact. `test-ipc` downloads it and sets `CORE_BINARY=/path/to/core`. The supervisor skips `cabal run` entirely and just executes the pre-built binary — fast and dependency-free.
+> - Locally, `CORE_BINARY` is unset, so the supervisor falls back to `cabal run` as before.
+>
+> This is a general pattern for any project that crosses a build/test job boundary in CI: **build once, pass the artifact, run it directly.**
 
 Key concepts:
 - **Child process management**: Starting, monitoring, and stopping the Haskell binary
@@ -796,11 +815,20 @@ jobs:
       - name: Build Haskell core
         run: nix develop --command bash -c "cd core && cabal update && cabal build"
 
+      # Copy binary to a flat, known path before uploading.
+      # If you upload the raw dist-newstyle glob, actions/upload-artifact
+      # preserves the full directory structure, so the download lands at
+      # core-bin/dist-newstyle/.../core instead of core-bin/core.
+      - name: Stage binary for upload
+        run: |
+          mkdir -p /tmp/core-out
+          cp $(find core/dist-newstyle -type f -name "core" -executable | head -1) /tmp/core-out/core
+
       - name: Upload core binary
         uses: actions/upload-artifact@v4
         with:
           name: core-binary
-          path: core/dist-newstyle/build/*/ghc-*/core-*/x/core/build/core/core
+          path: /tmp/core-out/core
           if-no-files-found: error
 
   build-ts:
@@ -890,6 +918,13 @@ Key concepts:
 - **Steps**: Individual tasks that run commands
 - **Actions**: Reusable units of code
 - **Artifacts**: Files produced by a job
+
+> **Lesson — Artifact path structure:** `actions/upload-artifact` preserves directory structure relative to the repo root. If you upload a glob like `core/dist-newstyle/.../core`, the downloaded artifact will contain that full path, not just the binary. When another job downloads it to `core-bin/`, the file ends up at `core-bin/dist-newstyle/.../core` — not `core-bin/core` as you'd expect.
+>
+> The fix: before uploading, copy the binary to a clean staging directory (`/tmp/core-out/core`) and upload that flat path instead. Use `find` to locate the binary without hardcoding the exact Cabal output path, which varies by OS and GHC version:
+> ```bash
+> cp $(find core/dist-newstyle -type f -name "core" -executable | head -1) /tmp/core-out/core
+> ```
 
 ## Step 8: Configure Cachix for Faster CI Builds
 
