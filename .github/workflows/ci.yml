@@ -12,78 +12,88 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up GHC 9.8.2
         uses: haskell-actions/setup@v2
         with:
           ghc-version: '9.8.2'
           cabal-version: 'latest'
-      
-      - name: Cache dependencies
-        uses: actions/cache@v3
+
+      # Cachix provides a shared binary cache so GHC dependencies don't need
+      # to be compiled from source on every CI run (saves ~10-20 min per run).
+      - name: Cache Cabal store
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cabal/store
-            dist-newstyle
-          key: ${{ runner.os }}-ghc-${{ hashFiles('**/core.cabal') }}
-          restore-keys: ${{ runner.os }}-ghc-
-      
+            core/dist-newstyle
+          key: ${{ runner.os }}-ghc-9.8.2-${{ hashFiles('core/Main.cabal') }}
+          restore-keys: ${{ runner.os }}-ghc-9.8.2-
+
       - name: Build
         run: |
           cd core
           cabal update
           cabal build
-      
+
+      # Upload the compiled binary so test-ipc can download it
+      # instead of rebuilding from scratch.
       - name: Upload core binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: core-binary
-          path: core/dist-newstyle/build/*/ghc-*/core-*/x/core/build/core/core
+          path: core/dist-newstyle/build/*/ghc-*/Main-*/x/Main/build/Main/Main
           if-no-files-found: error
-  
+
   build-ts:
     name: Build TypeScript
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
-      
+          cache: 'npm'
+
       - name: Install dependencies
         run: npm ci
-      
+
+      # --noEmit means tsc only type-checks; it doesn't write output files.
+      # This is fast and catches type errors without needing a full build step.
       - name: Type check
         run: npx tsc --noEmit
-  
+
   test-ipc:
     name: Test IPC Performance
     runs-on: ubuntu-latest
     needs: [build-haskell, build-ts]
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
-      
-      - name: Set up GHC 9.8.2
-        uses: haskell-actions/setup@v2
+          cache: 'npm'
+
+      # Download the pre-built binary from build-haskell instead of recompiling.
+      - name: Download core binary
+        uses: actions/download-artifact@v4
         with:
-          ghc-version: '9.8.2'
-          cabal-version: 'latest'
-      
-      - name: Install dependencies
+          name: core-binary
+          path: core-bin
+
+      - name: Make binary executable
+        run: chmod +x core-bin/Main
+
+      - name: Install Node dependencies
         run: npm ci
-      
-      - name: Build Haskell core
-        run: |
-          cd core
-          cabal update
-          cabal build
-      
+
+      # The IPC test spawns the Haskell binary and measures round-trip latency.
+      # CORE_BINARY tells the test where to find the executable.
       - name: Run IPC performance test
         run: npm test
+        env:
+          CORE_BINARY: ${{ github.workspace }}/core-bin/Main
